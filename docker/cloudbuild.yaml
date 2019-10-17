@@ -16,23 +16,45 @@ steps:
     '-t', 'us.gcr.io/$PROJECT_ID/sentry:latest',
     '-f', './docker/Dockerfile', '.'
   ]
+  timeout: 900s
 # Derive the -onbuild variant
 - name: 'gcr.io/cloud-builders/docker'
   args: [
     'build',
+    '--build-arg', 'SENTRY_IMAGE=us.gcr.io/$PROJECT_ID/sentry:$COMMIT_SHA',
     '-t', 'us.gcr.io/$PROJECT_ID/sentry:$COMMIT_SHA-onbuild',
     '-t', 'us.gcr.io/$PROJECT_ID/sentry:$SHORT_SHA-onbuild',
     '-t', 'us.gcr.io/$PROJECT_ID/sentry:latest-onbuild',
     '-f', './docker/onbuild/Dockerfile', '.'
   ]
 # Smoke tests
-- name: 'us.gcr.io/$PROJECT_ID/sentry:$COMMIT_SHA'
-  args: ['config', 'get', 'system.secret-key']
+- name: 'gcr.io/cloud-builders/curl'
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+    mkdir onpremise && cd onpremise
+    curl -L "https://github.com/getsentry/onpremise/archive/v10.tar.gz" | tar xzf - --strip-components=1
+- name: 'gcr.io/$PROJECT_ID/docker-compose'
+  entrypoint: 'bash'
   env:
-    - SENTRY_SKIP_BACKEND_VALIDATION=1
-    - SENTRY_SECRET_KEY=abc
-    - SENTRY_REDIS_HOST=localhost
- # Only tag "latest" when on master
+  - 'SENTRY_IMAGE=us.gcr.io/$PROJECT_ID/sentry:$COMMIT_SHA'
+  - 'CI=1'
+  args:
+    - '-c'
+    - |
+      ./install.sh
+      docker-compose run --rm web createuser --superuser --email test@sentry.io --password test123TEST
+  timeout: 900s
+- name: 'gcr.io/$PROJECT_ID/docker-compose'
+  args: ['up', '-d']
+  timeout: 300s
+- name: 'gcr.io/cloud-builders/curl'
+  dir: 'onpremise'
+  args:
+  - './test.sh'
+  timeout: 300s
+# Only tag "latest" when on master
 - name: 'gcr.io/cloud-builders/docker'
   entrypoint: 'bash'
   args:
@@ -43,9 +65,12 @@ steps:
       docker push us.gcr.io/$PROJECT_ID/sentry:latest
       docker push us.gcr.io/$PROJECT_ID/sentry:latest-onbuild
     fi
-timeout: 1200s
 images:
 - 'us.gcr.io/$PROJECT_ID/sentry:$COMMIT_SHA'
 - 'us.gcr.io/$PROJECT_ID/sentry:$COMMIT_SHA-onbuild'
 - 'us.gcr.io/$PROJECT_ID/sentry:$SHORT_SHA'
 - 'us.gcr.io/$PROJECT_ID/sentry:$SHORT_SHA-onbuild'
+timeout: 2700s
+options:
+  # We need more memory for Webpack builds & on-prem test
+  machineType: 'N1_HIGHCPU_8'
