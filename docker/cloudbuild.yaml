@@ -36,6 +36,7 @@ steps:
     mkdir onpremise && cd onpremise
     curl -L "https://github.com/getsentry/onpremise/archive/v10.tar.gz" | tar xzf - --strip-components=1
 - name: 'gcr.io/$PROJECT_ID/docker-compose'
+  dir: 'onpremise'
   entrypoint: 'bash'
   env:
   - 'SENTRY_IMAGE=us.gcr.io/$PROJECT_ID/sentry:$COMMIT_SHA'
